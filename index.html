@@ -1,0 +1,837 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ESP-NOW · MPU Monitor</title>
+<style>
+:root{font:14px system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#dbe9fb;background:#080e1a}
+*{box-sizing:border-box}body{margin:0}
+header{padding:18px max(24px,calc((100vw - 1340px)/2));border-bottom:1px solid #263348;background:#0b1424;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px}
+header h1{margin:0;font-size:22px;letter-spacing:-.5px;display:flex;align-items:center;gap:10px}
+header p{margin:4px 0 0;color:#91a5c0;font-size:13px}
+.header-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid #2b3d59;background:#111f35;color:#ffcf83}
+.badge.ok{color:#7be6ae;border-color:#235347;background:#0d2824}
+.badge.sim{color:#c4b5fd;border-color:#4c3575;background:#1e1638}
+.rx-dot{width:9px;height:9px;border-radius:50%;background:#475569;display:inline-block;transition:transform .08s,background .08s,box-shadow .08s}
+.rx-dot.active{background:#38bdf8;box-shadow:0 0 10px #38bdf8;transform:scale(1.3)}
+main{max-width:1380px;margin:auto;padding:20px 24px 40px}
+.grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}
+.card,.panel{border:1px solid #263348;background:#101c2e;border-radius:14px;padding:16px}
+.card span,.muted{color:#93a8c4;font-size:12px}
+.card b{display:block;font-size:25px;margin-top:6px;color:#75d7ff;font-variant-numeric:tabular-nums}
+.card small{display:block;margin-top:4px;color:#6f86a6;font-size:11px}
+.panel{margin-top:14px}
+.panels-3{display:grid;grid-template-columns:1.35fr 1.35fr 1fr;gap:14px}
+.panels-2{display:grid;grid-template-columns:2fr 1fr;gap:14px}
+h2{font-size:15px;margin:0 0 12px;display:flex;justify-content:space-between;align-items:center;color:#e2eeff}
+canvas{width:100%;height:200px;display:block}
+label{color:#8da3c2;font-size:12px;display:inline-flex;align-items:center;gap:6px}
+select,input[type="number"],input[type="text"]{background:#0a1425;color:#e7f2ff;border:1px solid #385171;border-radius:8px;padding:7px 10px;font-size:13px}
+input[type="range"]{accent-color:#38bdf8;cursor:pointer}
+button{background:#182b46;color:#e5f1ff;border:1px solid #36537a;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;transition:background .15s,border-color .15s,transform .05s}
+button:hover{background:#213a5e;border-color:#4f75a8}
+button:active{transform:translateY(1px)}
+button.primary{background:#0284c7;border-color:#38bdf8;color:#fff}
+button.primary:hover{background:#0369a1}
+button.sim-active{background:#6d28d9;border-color:#a78bfa;color:#fff}
+button.sim-active:hover{background:#5b21b6}
+button.warn{background:#3b1d2e;border-color:#883955;color:#fda4af}
+button.warn:hover{background:#52233b}
+.sim-panel{border-color:#3b4f73;background:linear-gradient(180deg,#132138 0%,#0f1b2d 100%)}
+.sim-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-top:12px;padding-top:12px;border-top:1px solid #23334c}
+.sim-field{display:flex;flex-direction:column;gap:5px;background:#0a1425;padding:10px 12px;border-radius:10px;border:1px solid #1f304a}
+.sim-field .row{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#9fb4d1}
+.sim-field .val{color:#75d7ff;font-weight:700;font-variant-numeric:tabular-nums}
+.sim-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center}
+.sim-actions .label-tag{font-size:12px;color:#8da3c2;margin-right:4px}
+.tape-wrap{display:flex;flex-direction:column;gap:8px}
+#tapeCanvas{height:58px;border-radius:8px;background:#091220;border:1px solid #1f304a}
+.frame-box{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;background:#091220;border:1px solid #1f304a;border-radius:8px;padding:10px 12px;font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.frame-box div span{color:#778fad;display:block;font-size:10px;text-transform:uppercase}
+.frame-box div b{color:#bae6fd;font-weight:600}
+.hex-line{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:#93c5fd;background:#070e19;padding:7px 10px;border-radius:6px;border:1px solid #192841;overflow-x:auto;white-space:nowrap}
+table{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #202d42;white-space:nowrap}
+th{color:#8da3c2;font-weight:600;position:sticky;top:0;background:#101c2e}
+tr:hover{background:#182a43}
+tr.row-gap{background:rgba(239,68,68,0.12)}
+tr.row-ooo{background:rgba(168,85,247,0.14)}
+tr.row-dup{background:rgba(234,179,8,0.12)}
+.pill{display:inline-block;padding:2px 7px;border-radius:6px;font-size:11px;font-weight:600}
+.pill-ok{background:#0d332a;color:#6ee7b7}
+.pill-gap{background:#451a23;color:#fca5a5}
+.pill-ooo{background:#351c4d;color:#d8b4fe}
+.pill-dup{background:#3d2f12;color:#fde047}
+.scroll{overflow:auto;max-height:360px}
+.toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px;justify-content:space-between}
+.toolbar-group{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.legend{display:flex;gap:16px;color:#97aac6;font-size:12px;margin-top:8px;flex-wrap:wrap}
+.legend span:before{content:'● ';color:var(--c)}
+@media(max-width:1100px){.grid{grid-template-columns:repeat(3,1fr)}.panels-3{grid-template-columns:1fr}.panels-2{grid-template-columns:1fr}}
+@media(max-width:650px){.grid{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<header>
+ <div>
+  <h1><span id="rxDot" class="rx-dot" title="Pulso de recepção de pacotes"></span> ESP-NOW / MPU6050 Monitor</h1>
+  <p>Telemetria ao vivo · Aceleração 3 Eixos · Giroscópio · Orientação 3D · Simulador de Enlace</p>
+ </div>
+ <div class="header-right">
+  <span id="modeBadge" class="badge">🔌 Modo Serial</span>
+  <span id="connection" class="badge">● Conectando...</span>
+  <button id="btnToggleSim" class="primary" onclick="toggleSimMode()">🧪 Ativar Simulação</button>
+ </div>
+</header>
+
+<main>
+ <!-- PAINEL DE CONTROLE DO SIMULADOR -->
+ <section class="panel sim-panel" id="simPanel">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+   <div>
+    <h2 style="margin:0">🧪 Simulador Interativo de Telemetria ESP-NOW + MPU6050</h2>
+    <div class="muted" style="margin-top:3px">Gera quadros binários reais do protocolo <code>MPU1</code> (41 bytes) para testar visualização, perda de pacotes, pacotes fora de ordem e múltiplos emissores sem precisar do hardware.</div>
+   </div>
+   <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button id="btnPauseSim" onclick="togglePauseSim()">⏸️ Pausar</button>
+    <button onclick="sendSimEvent('step')" title="Envia exatamente 1 pacote simulado">⏭️ +1 Pacote</button>
+    <button class="warn" onclick="resetCounters(false)">🗑️ Zerar Sessão</button>
+   </div>
+  </div>
+
+  <div class="sim-grid">
+   <div class="sim-field">
+    <div class="row"><span>Perfil de Movimento</span></div>
+    <select id="simProfile" onchange="pushSimConfig()">
+     <option value="wave">🌊 Inclinação Senoidal (Roll/Pitch)</option>
+     <option value="rotation">🔄 Rotação 3D Contínua</option>
+     <option value="vibration">⚙️ Vibração Mecânica / Motor</option>
+     <option value="steps">🚶 Caminhada / Impactos Rítmicos</option>
+     <option value="idle">🛑 Repouso na Bancada (Ruído MEMS)</option>
+    </select>
+   </div>
+   <div class="sim-field">
+    <div class="row"><span>Taxa de Amostragem</span><span class="val" id="valRate">50 Hz</span></div>
+    <input id="simRate" type="range" min="1" max="100" value="50" oninput="el('valRate').textContent=this.value+' Hz'" onchange="pushSimConfig()">
+   </div>
+   <div class="sim-field">
+    <div class="row"><span>Perda no Enlace (Drop)</span><span class="val" id="valLoss">5.0%</span></div>
+    <input id="simLoss" type="range" min="0" max="40" step="0.5" value="5" oninput="el('valLoss').textContent=Number(this.value).toFixed(1)+'%'" onchange="pushSimConfig()">
+   </div>
+   <div class="sim-field">
+    <div class="row"><span>Fora de Ordem (Atraso)</span><span class="val" id="valOoo">1.5%</span></div>
+    <input id="simOoo" type="range" min="0" max="20" step="0.5" value="1.5" oninput="el('valOoo').textContent=Number(this.value).toFixed(1)+'%'" onchange="pushSimConfig()">
+   </div>
+   <div class="sim-field">
+    <div class="row"><span>Ruído do Sensor</span><span class="val" id="valNoise">1.0x</span></div>
+    <input id="simNoise" type="range" min="0" max="4" step="0.2" value="1.0" oninput="el('valNoise').textContent=Number(this.value).toFixed(1)+'x'" onchange="pushSimConfig()">
+   </div>
+   <div class="sim-field">
+    <div class="row"><span>Emissores ESP32</span><span class="val" id="valDevs">1 nó</span></div>
+    <input id="simDevs" type="range" min="1" max="4" step="1" value="1" oninput="el('valDevs').textContent=this.value+(this.value>1?' nós':' nó')" onchange="pushSimConfig()">
+   </div>
+  </div>
+
+  <div class="sim-actions">
+   <span class="label-tag">Injetar eventos ao vivo:</span>
+   <button onclick="sendSimEvent('shock')">⚡ Impacto / Choque (Alta G)</button>
+   <button onclick="sendSimEvent('burst_loss')">📉 Rajada de Perda (-8 pkts)</button>
+   <button onclick="sendSimEvent('reordering')">🔀 Fora de Ordem</button>
+   <button onclick="sendSimEvent('queue_drop')">⚠️ Drop Fila USB</button>
+   <button onclick="sendSimEvent('reboot')">🔄 Reboot ESP32 (Novo Boot ID)</button>
+   <label style="margin-left:auto"><input type="checkbox" id="simPersist" checked onchange="pushSimConfig()"> Gravar simulação no SQLite</label>
+  </div>
+ </section>
+
+ <!-- INDICADORES PRINCIPAIS -->
+ <section class="grid" style="margin-top:14px">
+  <div class="card"><span>Amostras recebidas</span><b id="received">0</b><small id="storedInfo">0 no SQLite</small></div>
+  <div class="card"><span>Pacotes perdidos (est.)</span><b id="lost" style="color:#fda4af">0</b><small id="oooInfo">0 fora de ordem · 0 dup</small></div>
+  <div class="card"><span>Perda estimada</span><b id="loss">0.00%</b><small>Por salto de sequência</small></div>
+  <div class="card"><span>Taxa de chegada</span><b id="rate" style="color:#86efac">0</b><small>pacotes / segundo</small></div>
+  <div class="card"><span>RSSI mais recente</span><b id="rssi">—</b><small id="macActive">Nenhum emissor</small></div>
+  <div class="card"><span>Intervalo (Gap)</span><b id="gap">—</b><small>Drops fila USB: <strong id="queue">0</strong></small></div>
+ </section>
+
+ <!-- FITA DE CHEGADA DE PACOTES EM TEMPO REAL + INSPETOR BINÁRIO -->
+ <section class="panel">
+  <div class="tape-wrap">
+   <h2>
+    <span>📡 Fluxo Visual de Chegada de Pacotes (Sequência em Tempo Real)</span>
+    <span class="muted" id="lastSeqLabel">Aguardando pacotes...</span>
+   </h2>
+   <canvas id="tapeCanvas"></canvas>
+   <div class="legend" style="margin-top:2px">
+    <span style="--c:#10b981">Recebido em ordem (OK)</span>
+    <span style="--c:#ef4444">Salto / Pacote perdido</span>
+    <span style="--c:#a855f7">Chegada fora de ordem (Recuperado)</span>
+    <span style="--c:#eab308">Pacote duplicado</span>
+   </div>
+   <div class="frame-box" id="frameInspector">
+    <div><span>Protocolo / Magic</span><b id="fiMagic">MPU1 (v1)</b></div>
+    <div><span>MAC Emissor</span><b id="fiMac">—</b></div>
+    <div><span>Boot ID (Sessão)</span><b id="fiBoot">—</b></div>
+    <div><span>Sequência (#)</span><b id="fiSeq">—</b></div>
+    <div><span>Uptime Emissor</span><b id="fiUptime">—</b></div>
+    <div><span>Módulo Acel. |a|</span><b id="fiMag">—</b></div>
+   </div>
+   <div class="hex-line" id="fiHex">Frame Hex (41 bytes): aguardando...</div>
+  </div>
+ </section>
+
+ <!-- GRÁFICOS DOS SENSORES + ORIENTAÇÃO 3D -->
+ <div class="panels-3">
+  <section class="panel">
+   <h2><span>📈 Aceleração (m/s²)</span><span class="muted" id="accReadout">X: 0.00 · Y: 0.00 · Z: 0.00</span></h2>
+   <canvas id="sensorAcc"></canvas>
+   <div class="legend">
+    <span style="--c:#38bdf8">Ax</span>
+    <span style="--c:#4ade80">Ay</span>
+    <span style="--c:#fb923c">Az</span>
+    <span style="--c:#94a3b8">|A| (módulo)</span>
+   </div>
+  </section>
+
+  <section class="panel">
+   <h2><span>🌀 Giroscópio (rad/s)</span><span class="muted" id="gyrReadout">X: 0.00 · Y: 0.00 · Z: 0.00</span></h2>
+   <canvas id="sensorGyr"></canvas>
+   <div class="legend">
+    <span style="--c:#f472b6">Gx (Roll)</span>
+    <span style="--c:#a78bfa">Gy (Pitch)</span>
+    <span style="--c:#facc15">Gz (Yaw)</span>
+   </div>
+  </section>
+
+  <section class="panel">
+   <h2><span>🧭 Atitude 3D Estimada (MPU6050)</span><span class="muted" id="anglesReadout">Roll: 0° · Pitch: 0°</span></h2>
+   <canvas id="cubeCanvas"></canvas>
+   <div class="legend">
+    <span style="--c:#38bdf8">Eixo X</span>
+    <span style="--c:#4ade80">Eixo Y</span>
+    <span style="--c:#fb923c">Eixo Z (Gravidade)</span>
+   </div>
+  </section>
+ </div>
+
+ <!-- TRÁFEGO E LATÊNCIA -->
+ <div class="panels-2">
+  <section class="panel">
+   <h2><span>📊 Taxa de Recepção (últimos 60s)</span><span class="muted">Pacotes/s</span></h2>
+   <canvas id="traffic"></canvas>
+  </section>
+  <section class="panel">
+   <h2><span>⏱️ Intervalo entre Chegadas (Gap ms)</span><span class="muted" id="gapStats">Média: — ms</span></h2>
+   <canvas id="gapChart"></canvas>
+  </section>
+ </div>
+
+ <!-- TABELA DE PACOTES -->
+ <section class="panel">
+  <div class="toolbar">
+   <div class="toolbar-group">
+    <h2 style="margin:0">Últimos pacotes recebidos</h2>
+    <label>Dispositivo
+     <select id="device"><option value="">Todos</option></select>
+    </label>
+    <label>Filtro de Status
+     <select id="statusFilter">
+      <option value="">Todos os pacotes</option>
+      <option value="issues">Apenas Perdas / Fora de Ordem / Dup</option>
+      <option value="gap">Apenas Saltos de Sequência</option>
+      <option value="out_of_order">Apenas Fora de Ordem</option>
+     </select>
+    </label>
+    <label>Sequência <input id="search" type="number" placeholder="Ex.: 1024" style="width:110px"></label>
+   </div>
+   <div class="toolbar-group">
+    <button id="btnFreezeTable" onclick="toggleFreezeTable()">❄️ Congelar Tabela</button>
+   </div>
+  </div>
+  <div class="scroll">
+   <table>
+    <thead>
+     <tr>
+      <th>Horário</th><th>Status</th><th>MAC</th><th>Boot ID</th><th>Seq.</th><th>RSSI</th><th>Gap</th><th>Ax (m/s²)</th><th>Ay (m/s²)</th><th>Az (m/s²)</th><th>Gx (rad/s)</th><th>Gy (rad/s)</th><th>Gz (rad/s)</th>
+     </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+   </table>
+  </div>
+ </section>
+</main>
+
+<script>
+const el = id => document.getElementById(id);
+let packets = [], devices = [], sequenceSlots = [];
+let countThisSecond = 0, rates = Array(60).fill(0);
+let simState = { enabled: false, paused: false, rate_hz: 50, profile: 'wave', loss_percent: 5, out_of_order_percent: 1.5, noise_level: 1.0, device_count: 1, persist_db: true };
+let freezeTable = false, wsConnected = false, localFallbackTimer = null, localSeq = 0, localBoot = 0xA1B2C3D4;
+let rollEst = 0, pitchEst = 0, yawEst = 0, lastImuTs = null;
+
+function pulseRx() {
+ const dot = el('rxDot');
+ dot.classList.add('active');
+ clearTimeout(dot._t);
+ dot._t = setTimeout(() => dot.classList.remove('active'), 90);
+}
+
+function drawLineChart(canvasId, series, fixedMin = null, fixedMax = null) {
+ const canvas = el(canvasId);
+ if (!canvas) return;
+ const w = canvas.clientWidth, h = canvas.clientHeight, dpr = devicePixelRatio || 1;
+ canvas.width = Math.round(w * dpr);
+ canvas.height = Math.round(h * dpr);
+ const ctx = canvas.getContext('2d');
+ ctx.scale(dpr, dpr);
+
+ ctx.strokeStyle = '#1e2d44';
+ ctx.lineWidth = 1;
+ for (let i = 1; i < 4; i++) {
+  ctx.beginPath();
+  ctx.moveTo(0, h * i / 4);
+  ctx.lineTo(w, h * i / 4);
+  ctx.stroke();
+ }
+
+ const all = series.flatMap(x => x.data).filter(Number.isFinite);
+ const min = fixedMin !== null ? fixedMin : Math.min(-1, ...all);
+ const max = fixedMax !== null ? fixedMax : Math.max(1, ...all);
+ const span = Math.max(1e-6, max - min);
+
+ // Labels de escala
+ ctx.fillStyle = '#64748b';
+ ctx.font = '11px system-ui, sans-serif';
+ ctx.fillText(max.toFixed(1), 6, 13);
+ ctx.fillText(min.toFixed(1), 6, h - 5);
+
+ series.forEach(s => {
+  if (!s.data.length) return;
+  ctx.beginPath();
+  ctx.strokeStyle = s.color;
+  ctx.lineWidth = s.width || 2;
+  if (s.dashed) ctx.setLineDash([4, 4]); else ctx.setLineDash([]);
+  s.data.forEach((v, i) => {
+   const x = i * w / Math.max(1, s.data.length - 1);
+   const y = h - 10 - ((v - min) / span) * (h - 20);
+   i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  });
+  ctx.stroke();
+ });
+ ctx.setLineDash([]);
+}
+
+function drawSequenceTape() {
+ const canvas = el('tapeCanvas');
+ if (!canvas) return;
+ const w = canvas.clientWidth, h = canvas.clientHeight, dpr = devicePixelRatio || 1;
+ canvas.width = Math.round(w * dpr);
+ canvas.height = Math.round(h * dpr);
+ const ctx = canvas.getContext('2d');
+ ctx.scale(dpr, dpr);
+
+ const maxSlots = Math.max(25, Math.floor(w / 14));
+ const visible = sequenceSlots.slice(-maxSlots);
+ const slotW = (w - 12) / maxSlots;
+
+ visible.forEach((slot, idx) => {
+  const x = 6 + idx * slotW;
+  const barW = Math.max(4, slotW - 3);
+  let color = '#10b981';
+  let topY = 10, barH = h - 20;
+  if (slot.status === 'lost') {
+   color = '#ef4444';
+   topY = 6;
+   barH = h - 12;
+  } else if (slot.status === 'out_of_order') {
+   color = '#a855f7';
+  } else if (slot.status === 'duplicate') {
+   color = '#eab308';
+  }
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(x, topY, barW, barH, 3) : ctx.rect(x, topY, barW, barH);
+  ctx.fill();
+
+  if (slotW >= 24 && idx % 2 === 0) {
+   ctx.fillStyle = '#08101d';
+   ctx.font = 'bold 9px system-ui';
+   ctx.fillText(String(slot.seq % 100), x + 2, h / 2 + 3);
+  }
+ });
+}
+
+function drawCube3D() {
+ const canvas = el('cubeCanvas');
+ if (!canvas) return;
+ const w = canvas.clientWidth, h = canvas.clientHeight, dpr = devicePixelRatio || 1;
+ canvas.width = Math.round(w * dpr);
+ canvas.height = Math.round(h * dpr);
+ const ctx = canvas.getContext('2d');
+ ctx.scale(dpr, dpr);
+
+ const cx = w / 2, cy = h / 2, scale = Math.min(w, h) * 0.34;
+ const cr = Math.cos(rollEst), sr = Math.sin(rollEst);
+ const cp = Math.cos(pitchEst), sp = Math.sin(pitchEst);
+ const cyw = Math.cos(yawEst), syw = Math.sin(yawEst);
+
+ function rot(x, y, z) {
+  // Roll (X), Pitch (Y), Yaw (Z)
+  let y1 = y * cr - z * sr, z1 = y * sr + z * cr, x1 = x;
+  let x2 = x1 * cp + z1 * sp, z2 = -x1 * sp + z1 * cp, y2 = y1;
+  let x3 = x2 * cyw - y2 * syw, y3 = x2 * syw + y2 * cyw, z3 = z2;
+  const persp = 2.8 / (2.8 - z3 * 0.45);
+  return [cx + x3 * scale * persp, cy - z3 * scale * 0.75 * persp, z3];
+ }
+
+ // Placa MPU6050 (paralelepípedo achatado)
+ const verts = [
+  [-1.1, -0.75, -0.18], [1.1, -0.75, -0.18], [1.1, 0.75, -0.18], [-1.1, 0.75, -0.18],
+  [-1.1, -0.75,  0.18], [1.1, -0.75,  0.18], [1.1, 0.75,  0.18], [-1.1, 0.75,  0.18]
+ ].map(v => rot(v[0], v[1], v[2]));
+
+ const faces = [
+  { idx: [4, 5, 6, 7], color: 'rgba(30, 64, 175, 0.65)' }, // Topo
+  { idx: [0, 1, 2, 3], color: 'rgba(15, 23, 42, 0.75)' },  // Base
+  { idx: [0, 1, 5, 4], color: 'rgba(37, 99, 235, 0.45)' },
+  { idx: [1, 2, 6, 5], color: 'rgba(29, 78, 216, 0.45)' },
+  { idx: [2, 3, 7, 6], color: 'rgba(30, 58, 138, 0.45)' },
+  { idx: [3, 0, 4, 7], color: 'rgba(23, 37, 84, 0.45)' }
+ ];
+ faces.sort((a, b) => {
+  const za = a.idx.reduce((s, i) => s + verts[i][2], 0) / 4;
+  const zb = b.idx.reduce((s, i) => s + verts[i][2], 0) / 4;
+  return za - zb;
+ });
+
+ faces.forEach(f => {
+  ctx.beginPath();
+  f.idx.forEach((vi, i) => {
+   const [px, py] = verts[vi];
+   i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+  });
+  ctx.closePath();
+  ctx.fillStyle = f.color;
+  ctx.fill();
+  ctx.strokeStyle = '#60a5fa';
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+ });
+
+ // Eixos de referência X, Y, Z a partir do centro
+ const origin = rot(0, 0, 0);
+ const axes3d = [
+  { p: rot(1.45, 0, 0), c: '#38bdf8', lbl: 'X' },
+  { p: rot(0, 1.45, 0), c: '#4ade80', lbl: 'Y' },
+  { p: rot(0, 0, 1.15), c: '#fb923c', lbl: 'Z' }
+ ];
+ axes3d.forEach(a => {
+  ctx.beginPath();
+  ctx.strokeStyle = a.c;
+  ctx.lineWidth = 2.2;
+  ctx.moveTo(origin[0], origin[1]);
+  ctx.lineTo(a.p[0], a.p[1]);
+  ctx.stroke();
+  ctx.fillStyle = a.c;
+  ctx.font = 'bold 11px system-ui';
+  ctx.fillText(a.lbl, a.p[0] + 4, a.p[1] + 4);
+ });
+}
+
+function updateCharts() {
+ const mac = el('device').value;
+ const list = packets.filter(p => !mac || p.mac === mac).slice(-180);
+
+ drawLineChart('sensorAcc', [
+  { data: list.map(p => p.ax), color: '#38bdf8' },
+  { data: list.map(p => p.ay), color: '#4ade80' },
+  { data: list.map(p => p.az), color: '#fb923c' },
+  { data: list.map(p => Math.hypot(p.ax, p.ay, p.az)), color: '#94a3b8', width: 1.3, dashed: true }
+ ]);
+
+ drawLineChart('sensorGyr', [
+  { data: list.map(p => p.gx), color: '#f472b6' },
+  { data: list.map(p => p.gy), color: '#a78bfa' },
+  { data: list.map(p => p.gz), color: '#facc15' }
+ ]);
+
+ drawLineChart('traffic', [{ data: rates, color: '#38bdf8' }], 0, null);
+
+ const gaps = list.map(p => p.gap_ms).filter(v => v != null && Number.isFinite(v));
+ drawLineChart('gapChart', [{ data: gaps, color: '#c084fc' }], 0, null);
+ if (gaps.length) {
+  const avg = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+  const maxG = Math.max(...gaps);
+  el('gapStats').textContent = `Média: ${avg.toFixed(1)} ms · Máx: ${maxG.toFixed(1)} ms`;
+ }
+
+ drawSequenceTape();
+ drawCube3D();
+}
+
+function renderTable() {
+ if (freezeTable) return;
+ const mac = el('device').value;
+ const seqQuery = el('search').value.trim();
+ const statusFilter = el('statusFilter').value;
+
+ const rows = packets.filter(p => {
+  if (mac && p.mac !== mac) return false;
+  if (seqQuery && !String(p.seq).includes(seqQuery)) return false;
+  const st = p.status || 'ok';
+  if (statusFilter === 'issues' && st === 'ok') return false;
+  if (statusFilter === 'gap' && st !== 'gap') return false;
+  if (statusFilter === 'out_of_order' && st !== 'out_of_order') return false;
+  return true;
+ }).slice(-120).reverse();
+
+ const body = el('rows');
+ body.replaceChildren();
+ for (const p of rows) {
+  const tr = document.createElement('tr');
+  const st = p.status || 'ok';
+  if (st === 'gap') tr.className = 'row-gap';
+  else if (st === 'out_of_order') tr.className = 'row-ooo';
+  else if (st === 'duplicate') tr.className = 'row-dup';
+
+  const statusHtml = st === 'gap'
+   ? `<span class="pill pill-gap">Salto (-${p.lost_delta || 1})</span>`
+   : st === 'out_of_order'
+   ? `<span class="pill pill-ooo">Fora de Ordem</span>`
+   : st === 'duplicate'
+   ? `<span class="pill pill-dup">Duplicado</span>`
+   : `<span class="pill pill-ok">OK</span>`;
+
+  const tdTime = document.createElement('td');
+  tdTime.textContent = new Date(p.timestamp * 1000).toLocaleTimeString('pt-BR', { hour12: false }) + '.' + String(Math.floor((p.timestamp % 1) * 1000)).padStart(3, '0');
+  tr.appendChild(tdTime);
+
+  const tdStatus = document.createElement('td');
+  tdStatus.innerHTML = statusHtml;
+  tr.appendChild(tdStatus);
+
+  const values = [
+   p.mac,
+   '0x' + (p.boot >>> 0).toString(16).toUpperCase().padStart(8, '0'),
+   p.seq,
+   p.rssi + ' dBm',
+   p.gap_ms == null ? '—' : p.gap_ms.toFixed(1) + ' ms',
+   ...['ax', 'ay', 'az', 'gx', 'gy', 'gz'].map(k => Number(p[k]).toFixed(3))
+  ];
+  values.forEach(x => {
+   const td = document.createElement('td');
+   td.textContent = x;
+   tr.appendChild(td);
+  });
+  body.appendChild(tr);
+ }
+}
+
+function updateOrientation(p) {
+ const rollAcc = Math.atan2(p.ay, p.az);
+ const pitchAcc = Math.atan2(-p.ax, Math.hypot(p.ay, p.az));
+ const dt = lastImuTs ? Math.min(0.2, Math.max(0.001, p.timestamp - lastImuTs)) : 0.02;
+ lastImuTs = p.timestamp;
+ // Filtro complementar (94% giroscópio + 6% acelerômetro)
+ rollEst = 0.92 * (rollEst + p.gx * dt) + 0.08 * rollAcc;
+ pitchEst = 0.92 * (pitchEst + p.gy * dt) + 0.08 * pitchAcc;
+ yawEst = (yawEst + p.gz * dt) % (Math.PI * 2);
+
+ const rDeg = (rollEst * 180 / Math.PI).toFixed(1);
+ const pDeg = (pitchEst * 180 / Math.PI).toFixed(1);
+ el('anglesReadout').textContent = `Roll: ${rDeg}° · Pitch: ${pDeg}°`;
+}
+
+function onPacket(p) {
+ pulseRx();
+ packets.push(p);
+ if (packets.length > 800) packets.shift();
+ countThisSecond++;
+
+ const selectedMac = el('device').value;
+ if (!selectedMac || selectedMac === p.mac) {
+  // Atualiza fita visual de sequência
+  if (p.status === 'gap' && p.lost_delta > 0) {
+   const missingShow = Math.min(12, p.lost_delta);
+   for (let i = missingShow; i >= 1; i--) {
+    sequenceSlots.push({ seq: (p.seq - i) >>> 0, status: 'lost' });
+   }
+  }
+  if (p.status === 'out_of_order') {
+   const idx = sequenceSlots.findIndex(s => s.seq === p.seq && s.status === 'lost');
+   if (idx !== -1) sequenceSlots[idx].status = 'out_of_order';
+   else sequenceSlots.push({ seq: p.seq, status: 'out_of_order' });
+  } else {
+   sequenceSlots.push({ seq: p.seq, status: p.status === 'duplicate' ? 'duplicate' : 'ok' });
+  }
+  if (sequenceSlots.length > 160) sequenceSlots.splice(0, sequenceSlots.length - 160);
+
+  el('rssi').textContent = p.rssi + ' dBm';
+  el('macActive').textContent = p.mac;
+  el('gap').textContent = p.gap_ms == null ? '—' : p.gap_ms.toFixed(1) + ' ms';
+  el('lastSeqLabel').textContent = `Último: Seq #${p.seq} (${p.mac})`;
+  el('accReadout').textContent = `X: ${p.ax.toFixed(2)} · Y: ${p.ay.toFixed(2)} · Z: ${p.az.toFixed(2)}`;
+  el('gyrReadout').textContent = `X: ${p.gx.toFixed(2)} · Y: ${p.gy.toFixed(2)} · Z: ${p.gz.toFixed(2)}`;
+
+  const mag = Math.hypot(p.ax, p.ay, p.az);
+  el('fiMac').textContent = p.mac;
+  el('fiBoot').textContent = '0x' + (p.boot >>> 0).toString(16).toUpperCase().padStart(8, '0');
+  el('fiSeq').textContent = p.seq.toLocaleString('pt-BR');
+  el('fiUptime').textContent = p.uptime_us != null ? (p.uptime_us / 1e6).toFixed(2) + ' s' : '—';
+  el('fiMag').textContent = `${mag.toFixed(2)} m/s² (${(mag / 9.80665).toFixed(2)} g)`;
+  if (p.hex) {
+   const formattedHex = p.hex.toUpperCase().match(/.{1,2}/g).join(' ');
+   el('fiHex').textContent = `Frame Hex (41B): ${formattedHex}`;
+  }
+  updateOrientation(p);
+ }
+
+ renderTable();
+ updateCharts();
+}
+
+function syncSimUI(sim, serialInfo) {
+ if (!sim) return;
+ simState = { ...simState, ...sim };
+ const btnToggle = el('btnToggleSim');
+ const badge = el('modeBadge');
+ const btnPause = el('btnPauseSim');
+
+ if (simState.enabled) {
+  badge.textContent = simState.paused ? '🧪 Simulação (Pausada)' : `🧪 Simulação Ativa (${simState.rate_hz} Hz)`;
+  badge.className = 'badge sim';
+  btnToggle.textContent = '🔌 Voltar para Porta Serial';
+  btnToggle.className = 'sim-active';
+ } else {
+  const portTxt = serialInfo && serialInfo.port ? serialInfo.port : 'USB';
+  const connTxt = serialInfo && serialInfo.connected ? `Conectado (${portTxt})` : `Aguardando (${portTxt})`;
+  badge.textContent = `🔌 Serial: ${connTxt}`;
+  badge.className = serialInfo && serialInfo.connected ? 'badge ok' : 'badge';
+  btnToggle.textContent = '🧪 Ativar Modo Simulação';
+  btnToggle.className = 'primary';
+ }
+
+ btnPause.textContent = simState.paused ? '▶️ Retomar' : '⏸️ Pausar';
+ if (document.activeElement !== el('simProfile')) el('simProfile').value = simState.profile;
+ if (document.activeElement !== el('simRate')) {
+  el('simRate').value = simState.rate_hz;
+  el('valRate').textContent = simState.rate_hz + ' Hz';
+ }
+ if (document.activeElement !== el('simLoss')) {
+  el('simLoss').value = simState.loss_percent;
+  el('valLoss').textContent = Number(simState.loss_percent).toFixed(1) + '%';
+ }
+ if (document.activeElement !== el('simOoo')) {
+  el('simOoo').value = simState.out_of_order_percent;
+  el('valOoo').textContent = Number(simState.out_of_order_percent).toFixed(1) + '%';
+ }
+ if (document.activeElement !== el('simNoise')) {
+  el('simNoise').value = simState.noise_level;
+  el('valNoise').textContent = Number(simState.noise_level).toFixed(1) + 'x';
+ }
+ if (document.activeElement !== el('simDevs')) {
+  el('simDevs').value = simState.device_count;
+  el('valDevs').textContent = simState.device_count + (simState.device_count > 1 ? ' nós' : ' nó');
+ }
+ el('simPersist').checked = Boolean(simState.persist_db);
+}
+
+function onSummary(data) {
+ devices = data.devices || [];
+ if (data.sim) syncSimUI(data.sim, data.serial);
+ if (data.stored != null) el('storedInfo').textContent = `${data.stored.toLocaleString('pt-BR')} gravados no SQLite`;
+
+ let selected = el('device').value;
+ const select = el('device');
+ select.replaceChildren(new Option('Todos', ''));
+ devices.forEach(d => select.add(new Option(d.mac, d.mac)));
+ select.value = selected;
+
+ const active = devices.filter(d => !selected || d.mac === selected);
+ const received = active.reduce((n, d) => n + d.received, 0);
+ const lost = active.reduce((n, d) => n + d.lost, 0);
+ const ooo = active.reduce((n, d) => n + (d.out_of_order || 0), 0);
+ const dup = active.reduce((n, d) => n + (d.duplicates || 0), 0);
+
+ el('received').textContent = received.toLocaleString('pt-BR');
+ el('lost').textContent = lost.toLocaleString('pt-BR');
+ el('oooInfo').textContent = `${ooo} fora de ordem · ${dup} dup`;
+ el('loss').textContent = (received + lost ? 100 * lost / (received + lost) : 0).toFixed(2) + '%';
+ el('queue').textContent = active.reduce((n, d) => n + d.queue_drops, 0).toLocaleString('pt-BR');
+}
+
+async function pushSimConfig(overrides = {}) {
+ const payload = {
+  enabled: overrides.enabled !== undefined ? overrides.enabled : simState.enabled,
+  paused: overrides.paused !== undefined ? overrides.paused : simState.paused,
+  profile: el('simProfile').value,
+  rate_hz: Number(el('simRate').value),
+  loss_percent: Number(el('simLoss').value),
+  out_of_order_percent: Number(el('simOoo').value),
+  noise_level: Number(el('simNoise').value),
+  device_count: Number(el('simDevs').value),
+  persist_db: el('simPersist').checked
+ };
+ if (!wsConnected) {
+  syncSimUI(payload, null);
+  manageLocalFallback();
+  return;
+ }
+ try {
+  const res = await fetch('/api/sim/config', {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify(payload)
+  });
+  if (res.ok) onSummary(await res.json());
+ } catch (e) {}
+}
+
+function toggleSimMode() {
+ pushSimConfig({ enabled: !simState.enabled, paused: false });
+}
+
+function togglePauseSim() {
+ pushSimConfig({ enabled: true, paused: !simState.paused });
+}
+
+async function sendSimEvent(action) {
+ if (!simState.enabled) await pushSimConfig({ enabled: true });
+ if (!wsConnected) {
+  runLocalStep(action);
+  return;
+ }
+ try {
+  await fetch('/api/sim/event', {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify({ action })
+  });
+ } catch (e) {}
+}
+
+async function resetCounters(clearDb = false) {
+ packets = [];
+ sequenceSlots = [];
+ el('rows').replaceChildren();
+ updateCharts();
+ if (wsConnected) {
+  try {
+   const res = await fetch('/api/reset', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clear_db: clearDb })
+   });
+   if (res.ok) onSummary(await res.json());
+  } catch (e) {}
+ }
+}
+
+function toggleFreezeTable() {
+ freezeTable = !freezeTable;
+ const btn = el('btnFreezeTable');
+ btn.textContent = freezeTable ? '▶️ Retomar Tabela' : '❄️ Congelar Tabela';
+ btn.className = freezeTable ? 'primary' : '';
+ if (!freezeTable) renderTable();
+}
+
+// Fallback local caso o usuário abra index.html direto sem servidor Python
+function runLocalStep(eventAction = null) {
+ localSeq++;
+ const t = localSeq / Math.max(1, simState.rate_hz);
+ const g = 9.80665;
+ const roll = 0.55 * Math.sin(1.4 * t), pitch = 0.4 * Math.cos(1.0 * t);
+ const ax = -g * Math.sin(pitch) + (eventAction === 'shock' ? 12 : 0);
+ const ay = g * Math.sin(roll) * Math.cos(pitch);
+ const az = g * Math.cos(roll) * Math.cos(pitch);
+ const gx = 0.77 * Math.cos(1.4 * t), gy = -0.4 * Math.sin(1.0 * t), gz = 0.15 * Math.sin(0.7 * t);
+ const lostDelta = eventAction === 'burst_loss' ? 5 : (Math.random() * 100 < simState.loss_percent ? 1 : 0);
+ if (lostDelta > 0) localSeq += lostDelta;
+ onPacket({
+  timestamp: Date.now() / 1000,
+  mac: '24:6F:28:AA:BB:CC',
+  boot: localBoot,
+  seq: localSeq,
+  uptime_us: Math.floor(t * 1e6),
+  rssi: -52 + Math.round(Math.sin(t) * 3),
+  gap_ms: (1000 / simState.rate_hz) * (1 + lostDelta),
+  ax, ay, az, gx, gy, gz,
+  queue_drops: 0,
+  status: lostDelta > 0 ? 'gap' : 'ok',
+  lost_delta: lostDelta,
+  hex: '4D50553101' + localBoot.toString(16).padStart(8, '0') + localSeq.toString(16).padStart(8, '0')
+ });
+}
+
+function manageLocalFallback() {
+ clearInterval(localFallbackTimer);
+ if (!wsConnected && simState.enabled && !simState.paused) {
+  localFallbackTimer = setInterval(() => runLocalStep(), 1000 / Math.max(1, simState.rate_hz));
+ }
+}
+
+async function loadInitialHistory() {
+ try {
+  const [histRes, sumRes] = await Promise.all([fetch('/api/history?limit=180'), fetch('/api/summary')]);
+  if (sumRes.ok) onSummary(await sumRes.json());
+  if (histRes.ok) {
+   const hist = await histRes.json();
+   if (Array.isArray(hist) && hist.length) {
+    packets = hist;
+    const last = hist[hist.length - 1];
+    hist.slice(-80).forEach(p => sequenceSlots.push({ seq: p.seq, status: p.status || 'ok' }));
+    updateOrientation(last);
+    renderTable();
+    updateCharts();
+   }
+  }
+ } catch (e) {}
+}
+
+function connect() {
+ if (location.protocol === 'file:') {
+  el('connection').textContent = '● Modo Offline (Arquivo Local)';
+  syncSimUI({ ...simState, enabled: true }, null);
+  manageLocalFallback();
+  return;
+ }
+ const url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+ const ws = new WebSocket(url);
+ ws.onopen = () => {
+  wsConnected = true;
+  clearInterval(localFallbackTimer);
+  el('connection').textContent = '● Dashboard conectado';
+  el('connection').className = 'badge ok';
+ };
+ ws.onmessage = e => {
+  const obj = JSON.parse(e.data);
+  if (obj.type === 'packet') onPacket(obj);
+  else if (obj.type === 'summary') onSummary(obj);
+ };
+ ws.onclose = () => {
+  wsConnected = false;
+  el('connection').textContent = '● Reconectando...';
+  el('connection').className = 'badge';
+  setTimeout(connect, 1500);
+ };
+}
+
+el('device').onchange = () => { onSummary({ devices }); renderTable(); updateCharts(); };
+el('statusFilter').onchange = renderTable;
+el('search').oninput = renderTable;
+
+setInterval(() => {
+ rates.shift();
+ rates.push(countThisSecond);
+ el('rate').textContent = countThisSecond;
+ countThisSecond = 0;
+ updateCharts();
+}, 1000);
+
+window.onresize = updateCharts;
+updateCharts();
+loadInitialHistory();
+connect();
+</script>
+</body>
+</html>
