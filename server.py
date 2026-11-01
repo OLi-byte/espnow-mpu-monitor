@@ -17,6 +17,7 @@ import serial
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from serial.tools import list_ports
 
 ROOT = Path(__file__).resolve().parent
 FRAME = struct.Struct("<4sBIII6f")
@@ -39,17 +40,62 @@ recent = deque(maxlen=400)
 db: sqlite3.Connection | None = None
 
 
+def list_available_ports() -> list[dict[str, Any]]:
+    try:
+        ports = list_ports.comports()
+    except Exception:
+        return []
+    items: list[dict[str, Any]] = []
+    for p in sorted(ports, key=lambda x: x.device):
+        desc = (p.description or "").strip()
+        is_usb = bool(
+            p.vid is not None
+            or any(
+                k in desc.upper()
+                for k in ("USB", "CP210", "CH340", "CH910", "FTDI", "ESP", "UART")
+            )
+        )
+        items.append(
+            {
+                "port": p.device,
+                "description": desc,
+                "is_usb": is_usb,
+            }
+        )
+    return items
+
+
+def detect_default_port(fallback: str = "COM3") -> str:
+    ports = list_available_ports()
+    for p in ports:
+        if p["port"] == fallback:
+            return fallback
+    for p in ports:
+        if p["is_usb"]:
+            return p["port"]
+    if ports:
+        return ports[0]["port"]
+    return fallback
+
+
+_initial_port = detect_default_port("COM6")
+
+
 class RuntimeArgs:
-    port: str = "COM3"
+    port: str = _initial_port
     demo: bool = False
 
 
 args = RuntimeArgs()
 
-serial_status = {
+serial_status: dict[str, Any] = {
     "connected": False,
-    "port": "COM3",
+    "port": _initial_port,
     "error": None,
+    "role": None,
+    "diag_status": None,
+    "diag_msg": None,
+    "device_mac": None,
 }
 
 
@@ -124,6 +170,10 @@ class SimEventRequest(BaseModel):
 
 class ResetRequest(BaseModel):
     clear_db: bool = False
+
+
+class SerialPortUpdate(BaseModel):
+    port: str
 
 
 def decode(raw: dict):
@@ -225,7 +275,6 @@ def process(packet, persist: bool = True):
                 )
             ),
         )
-        db.commit()
 
     packet["type"] = "packet"
     recent.append(packet)
@@ -270,7 +319,11 @@ def summary():
         "devices": list(devices.values()),
         "stored": stored_count,
         "sim": sim.to_dict(),
-        "serial": serial_status,
+        "serial": {
+            **serial_status,
+            "port": args.port,
+            "available_ports": list_available_ports(),
+        },
     }
 
 
@@ -290,39 +343,74 @@ async def record(raw, persist: bool = True):
     await publish(packet)
 
 
+def _read_serial_batch(port: serial.Serial) -> list[bytes]:
+    first = port.readline()
+    if not first:
+        return []
+    lines = [first]
+    while port.in_waiting > 0 and len(lines) < 32:
+        nxt = port.readline()
+        if not nxt:
+            break
+        lines.append(nxt)
+    return lines
+
+
 async def collect_serial():
     while True:
         if sim.enabled:
             serial_status["connected"] = False
             await asyncio.sleep(0.25)
             continue
-        serial_status["port"] = args.port
+        target_port = args.port
+        serial_status["port"] = target_port
         port = None
         try:
             port = await asyncio.to_thread(
-                serial.Serial, args.port, 115200, timeout=0.2
+                serial.Serial, target_port, 115200, timeout=0.08
             )
+            port.reset_input_buffer()
             serial_status["connected"] = True
             serial_status["error"] = None
-            print("Connected to", args.port, flush=True)
-            while not sim.enabled:
-                line = await asyncio.to_thread(port.readline)
-                if not line:
+            serial_status["role"] = None
+            serial_status["diag_status"] = None
+            serial_status["diag_msg"] = None
+            serial_status["device_mac"] = None
+            print("Connected to", target_port, flush=True)
+            await publish(summary())
+            while not sim.enabled and args.port == target_port:
+                lines = await asyncio.to_thread(_read_serial_batch, port)
+                if not lines:
                     continue
-                try:
-                    await record(json.loads(line.decode("utf-8")), persist=True)
-                except (UnicodeError, json.JSONDecodeError):
-                    pass
+                for line in lines:
+                    try:
+                        payload = json.loads(line.decode("utf-8"))
+                        if isinstance(payload, dict) and payload.get("type") == "diag":
+                            serial_status["role"] = payload.get("role")
+                            serial_status["diag_status"] = payload.get("status")
+                            serial_status["diag_msg"] = payload.get("msg")
+                            serial_status["device_mac"] = payload.get("mac")
+                            continue
+                        serial_status["role"] = "receiver"
+                        serial_status["diag_status"] = "receiving"
+                        await record(payload, persist=True)
+                    except (UnicodeError, json.JSONDecodeError):
+                        pass
         except (serial.SerialException, OSError) as exc:
             serial_status["connected"] = False
             serial_status["error"] = str(exc)
-            await asyncio.sleep(1.5)
+            for _ in range(15):
+                if args.port != target_port or sim.enabled:
+                    break
+                await asyncio.sleep(0.1)
         finally:
             if port is not None:
                 try:
                     await asyncio.to_thread(port.close)
                 except Exception:
                     pass
+            if args.port != target_port:
+                serial_status["connected"] = False
 
 
 def generate_imu_reading(t: float, profile: str, noise_scale: float, shock_active: bool):
@@ -463,6 +551,11 @@ async def simulate_loop():
 async def heartbeat():
     while True:
         await asyncio.sleep(1)
+        if db is not None:
+            try:
+                db.commit()
+            except Exception:
+                pass
         await publish(summary())
 
 
@@ -471,6 +564,7 @@ async def lifespan(app):
     global db
     db = sqlite3.connect(DATABASE)
     db.execute("PRAGMA journal_mode=WAL")
+    db.execute("PRAGMA synchronous=NORMAL")
     db.execute("""CREATE TABLE IF NOT EXISTS packets (
         id INTEGER PRIMARY KEY, timestamp REAL, mac TEXT, boot INTEGER,
         seq INTEGER, rssi INTEGER, ax REAL, ay REAL, az REAL,
@@ -495,7 +589,10 @@ app = FastAPI(title="ESP-NOW MPU Monitor", lifespan=lifespan)
 
 @app.get("/")
 async def index():
-    return FileResponse(ROOT / "index.html")
+    return FileResponse(
+        ROOT / "index.html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
 
 
 @app.get("/api/history")
@@ -503,6 +600,8 @@ async def history(limit: int = 200):
     limit = max(1, min(limit, 2000))
     if recent:
         return list(recent)[-limit:]
+    if not sim.enabled:
+        return []
     db.row_factory = sqlite3.Row
     data = db.execute(
         "SELECT * FROM packets ORDER BY id DESC LIMIT ?", (limit,)
@@ -600,6 +699,29 @@ async def trigger_sim_event(req: SimEventRequest):
     return {"ok": True, "action": action, "sim": sim.to_dict()}
 
 
+@app.get("/api/serial/ports")
+async def get_serial_ports():
+    return {
+        **serial_status,
+        "port": args.port,
+        "available_ports": list_available_ports(),
+    }
+
+
+@app.post("/api/serial/port")
+async def update_serial_port(req: SerialPortUpdate):
+    new_port = req.port.strip()
+    if new_port:
+        args.port = new_port
+        serial_status["port"] = new_port
+        serial_status["connected"] = False
+        serial_status["error"] = None
+        sim.enabled = False
+    state = summary()
+    await publish(state)
+    return state
+
+
 @app.post("/api/reset")
 async def reset_session(req: ResetRequest):
     states.clear()
@@ -633,12 +755,15 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--port", default="COM3", help="Serial port (e.g. COM3 or /dev/ttyUSB0)"
+        "--port",
+        default=_initial_port,
+        help="Serial port (e.g. COM5 or /dev/ttyUSB0)",
     )
     parser.add_argument(
         "--demo", action="store_true", help="Start with simulated MPU packets active"
     )
     parsed = parser.parse_args()
     args.port = parsed.port
+    serial_status["port"] = parsed.port
     args.demo = parsed.demo
     uvicorn.run(app, host="127.0.0.1", port=8000)

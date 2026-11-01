@@ -4,15 +4,22 @@ Monitor local de telemetria do MPU6050 por ESP-NOW. Inclui firmware emissor e re
 
 ## Hardware
 
-- 2 ESP32 (Arduino-ESP32 3.x): um com MPU6050 e outro como receptor USB.
+- 2 ESP32: um conectado ao sensor MPU6050 (emissor) e outro como receptor USB.
 - MPU6050 (I2C padrão para ESP32: SDA GPIO21, SCL GPIO22, alimentação compatível com a placa).
 - Os dois ESP32 devem estar no mesmo canal Wi-Fi (`CHANNEL=1` no código).
-- Instale as bibliotecas Arduino **Adafruit MPU6050** e **Adafruit Unified Sensor** (e dependências).
+- As bibliotecas **Adafruit MPU6050**, **Adafruit Unified Sensor** e **Adafruit BusIO** são baixadas automaticamente pelo **PlatformIO** via `platformio.ini`.
 
-## Executar
+## Executar (PlatformIO + Python)
 
-1. Grave `firmware/sender_mpu6050/sender_mpu6050.ino` no transmissor.
-2. Grave `firmware/receiver_usb/receiver_usb.ino` no receptor e conecte-o via USB ao PC.
+1. **Grave o ESP32 Emissor (com MPU6050)** usando o ambiente `sender_mpu6050`:
+   ```bash
+   pio run -e sender_mpu6050 -t upload
+   ```
+2. **Grave o ESP32 Receptor (USB)** usando o ambiente `receiver_usb` e mantenha-o conectado via USB ao PC:
+   ```bash
+   pio run -e receiver_usb -t upload
+   ```
+   *(Na extensão do PlatformIO no VS Code, basta selecionar o ambiente `env:sender_mpu6050` ou `env:receiver_usb` na barra inferior e clicar em **Upload**).*
 3. Com Python 3.10+ instalado, execute na pasta do projeto:
 
 ```bash
@@ -20,7 +27,7 @@ python -m pip install -r requirements.txt
 python server.py --port COM3
 ```
 
-No Linux, use por exemplo `--port /dev/ttyUSB0`. Feche o monitor serial da Arduino IDE.
+No Linux, use por exemplo `--port /dev/ttyUSB0`. Feche o monitor serial do PlatformIO antes de iniciar o `server.py`.
 Acesse http://127.0.0.1:8000.
 
 ## Teste sem hardware (Modo de Simulação Interativo)
@@ -51,7 +58,8 @@ Recursos do modo de simulação e visualização de chegada:
 
 ## Arquivos
 
-- `server.py`: decodificador binário, perda por sequência, WebSocket, API e histórico SQLite
-- `index.html`: gráficos, filtros, tabela e indicadores
-- `firmware/sender_mpu6050`: leitura de MPU e transmissão a 50 Hz
-- `firmware/receiver_usb`: escuta ESP-NOW, RSSI e encaminhamento USB
+- `platformio.ini`: configuração dos dois ambientes PlatformIO (`sender_mpu6050` e `receiver_usb`) e dependências automáticas
+- `firmware/sender_mpu6050/main.cpp`: leitura do MPU6050 (I2C) e transmissão ESP-NOW a 50 Hz
+- `firmware/receiver_usb/main.cpp`: escuta ESP-NOW, captura de RSSI (compatível com Arduino-ESP32 2.x e 3.x) e encaminhamento JSON via USB
+- `server.py`: decodificador binário, perda por sequência, simulador interativo, WebSocket, API e histórico SQLite
+- `index.html`: dashboard em tempo real, gráficos, fita de sequência, orientação 3D e painel de simulação

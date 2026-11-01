@@ -10,6 +10,9 @@ header{padding:18px max(24px,calc((100vw - 1340px)/2));border-bottom:1px solid #
 header h1{margin:0;font-size:22px;letter-spacing:-.5px;display:flex;align-items:center;gap:10px}
 header p{margin:4px 0 0;color:#91a5c0;font-size:13px}
 .header-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.serial-picker{display:inline-flex;align-items:center;gap:6px;background:#111f35;border:1px solid #2b3d59;border-radius:999px;padding:3px 6px 3px 12px;font-size:12px;color:#9fb4d1}
+.serial-picker select{background:#0a1425;color:#e7f2ff;border:1px solid #355075;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600;max-width:250px}
+.serial-picker button{padding:3px 8px;border-radius:999px;font-size:11px;background:#162844;border-color:#304a6e}
 .badge{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid #2b3d59;background:#111f35;color:#ffcf83}
 .badge.ok{color:#7be6ae;border-color:#235347;background:#0d2824}
 .badge.sim{color:#c4b5fd;border-color:#4c3575;background:#1e1638}
@@ -24,6 +27,19 @@ main{max-width:1380px;margin:auto;padding:20px 24px 40px}
 .panel{margin-top:14px}
 .panels-3{display:grid;grid-template-columns:1.35fr 1.35fr 1fr;gap:14px}
 .panels-2{display:grid;grid-template-columns:2fr 1fr;gap:14px}
+.space-layout{display:grid;grid-template-columns:1.45fr 1fr;gap:14px;margin-top:14px}
+.stage-wrap{position:relative;border:1px solid #243854;border-radius:12px;background:radial-gradient(circle at 50% 38%,#132540 0%,#08111f 75%);overflow:hidden}
+#cubeCanvas{width:100%;height:340px;display:block}
+.stage-hud{position:absolute;top:10px;left:12px;right:12px;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none;gap:8px;flex-wrap:wrap}
+.hud-box{background:rgba(8,15,28,0.82);border:1px solid #294060;border-radius:9px;padding:7px 11px;font-size:12px;backdrop-filter:blur(4px)}
+.hud-box b{color:#75d7ff;font-variant-numeric:tabular-nums}
+.vel-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.vel-card{background:#0a1425;border:1px solid #1f314d;border-radius:10px;padding:10px 12px}
+.vel-card span{color:#8da3c2;font-size:11px;display:block}
+.vel-card b{font-size:21px;color:#38bdf8;display:block;margin-top:3px;font-variant-numeric:tabular-nums}
+.vel-card small{color:#6f86a6;font-size:11px;display:block;margin-top:3px;font-variant-numeric:tabular-nums}
+.speed-bar-bg{height:6px;background:#091322;border-radius:999px;overflow:hidden;margin-top:6px;border:1px solid #1d2f49}
+.speed-bar-fill{height:100%;width:0%;background:linear-gradient(90deg,#10b981,#38bdf8,#f472b6);transition:width .06s linear}
 h2{font-size:15px;margin:0 0 12px;display:flex;justify-content:space-between;align-items:center;color:#e2eeff}
 canvas{width:100%;height:200px;display:block}
 label{color:#8da3c2;font-size:12px;display:inline-flex;align-items:center;gap:6px}
@@ -79,6 +95,13 @@ tr.row-dup{background:rgba(234,179,8,0.12)}
   <p>Telemetria ao vivo · Aceleração 3 Eixos · Giroscópio · Orientação 3D · Simulador de Enlace</p>
  </div>
  <div class="header-right">
+  <div class="serial-picker" title="Selecione a porta COM do ESP32 Receptor">
+   <span>Porta:</span>
+   <select id="serialPortSelect" onchange="changeSerialPort(this.value)">
+    <option value="COM5">COM5</option>
+   </select>
+   <button type="button" onclick="refreshSerialPorts()" title="Atualizar portas COM conectadas">🔄</button>
+  </div>
   <span id="modeBadge" class="badge">🔌 Modo Serial</span>
   <span id="connection" class="badge">● Conectando...</span>
   <button id="btnToggleSim" class="primary" onclick="toggleSimMode()">🧪 Ativar Simulação</button>
@@ -154,6 +177,100 @@ tr.row-dup{background:rgba(234,179,8,0.12)}
   <div class="card"><span>Intervalo (Gap)</span><b id="gap">—</b><small>Drops fila USB: <strong id="queue">0</strong></small></div>
  </section>
 
+ <!-- ORIENTAÇÃO 3D FLUIDA NO ESPAÇO + VELOCIDADE LINEAR E ANGULAR -->
+ <div class="space-layout">
+  <section class="panel" style="margin-top:0">
+   <h2 style="margin-bottom:10px">
+    <span>🧭 Orientação 3D & Movimento no Espaço (60 FPS · Baixa Latência)</span>
+    <span style="display:flex;gap:8px;align-items:center">
+     <button type="button" class="primary" onclick="tareSensor()" title="Define a orientação atual como 0° e calibra repouso">🎯 Zerar / Calibrar Posição</button>
+     <button type="button" onclick="clearTrail()" title="Limpar rastro espacial 3D">🧹 Limpar Rastro</button>
+    </span>
+   </h2>
+   <div class="stage-wrap">
+    <div class="stage-hud">
+     <div class="hud-box">
+      <div style="color:#93a8c4;font-size:10px;text-transform:uppercase">Atitude 3D (Roll · Pitch · Yaw)</div>
+      <b id="anglesReadout">Roll: 0.0° · Pitch: 0.0° · Yaw: 0.0°</b>
+     </div>
+     <div class="hud-box" style="text-align:right">
+      <div style="color:#93a8c4;font-size:10px;text-transform:uppercase">Estado Cinemático</div>
+      <b id="motionBadge" style="color:#6ee7b7">🛑 Em Repouso (ZUPT)</b>
+     </div>
+    </div>
+    <canvas id="cubeCanvas"></canvas>
+   </div>
+   <div class="legend" style="margin-top:10px">
+    <span style="--c:#38bdf8">Eixo X (Frente)</span>
+    <span style="--c:#4ade80">Eixo Y (Lateral)</span>
+    <span style="--c:#fb923c">Eixo Z (Vertical)</span>
+    <span style="--c:#22d3ee">Vetor Velocidade 3D (V)</span>
+    <span style="--c:#facc15">Vetor Acel. Linear (a_lin)</span>
+    <span style="--c:#a855f7">Rastro Espacial 3D</span>
+   </div>
+  </section>
+
+  <section class="panel" style="margin-top:0;display:flex;flex-direction:column;justify-content:space-between">
+   <div>
+    <h2>
+     <span>🚀 Velocidade 3D & Aceleração Linear (Sem Gravidade)</span>
+     <span class="muted" id="velReadout">Vx: 0.00 · Vy: 0.00 · Vz: 0.00 m/s</span>
+    </h2>
+    <div class="vel-grid">
+     <div class="vel-card">
+      <span>Velocidade Linear |V|</span>
+      <b id="velMag">0.00 m/s</b>
+      <small id="velCm">0.0 cm/s · Pico: 0.00 m/s</small>
+      <div class="speed-bar-bg"><div id="speedBar" class="speed-bar-fill"></div></div>
+     </div>
+     <div class="vel-card">
+      <span>Velocidade Angular |ω|</span>
+      <b id="angVelMag" style="color:#c084fc">0.0 °/s</b>
+      <small id="angVelRad">0.00 rad/s</small>
+     </div>
+     <div class="vel-card">
+      <span>Acel. Linear |a_lin|</span>
+      <b id="linAccMag" style="color:#fbbf24">0.00 m/s²</b>
+      <small id="linAccVec">X:0.0 Y:0.0 Z:0.0</small>
+     </div>
+    </div>
+   </div>
+   <div>
+    <canvas id="velChart" style="height:175px"></canvas>
+    <div class="legend">
+     <span style="--c:#38bdf8">Vx</span>
+     <span style="--c:#4ade80">Vy</span>
+     <span style="--c:#fb923c">Vz</span>
+     <span style="--c:#22d3ee">|V| (m/s)</span>
+    </div>
+   </div>
+  </section>
+ </div>
+
+ <!-- GRÁFICOS DOS SENSORES BRUTOS -->
+ <div class="panels-2" style="grid-template-columns:1fr 1fr">
+  <section class="panel">
+   <h2><span>📈 Aceleração Bruta (m/s²)</span><span class="muted" id="accReadout">X: 0.00 · Y: 0.00 · Z: 0.00</span></h2>
+   <canvas id="sensorAcc"></canvas>
+   <div class="legend">
+    <span style="--c:#38bdf8">Ax</span>
+    <span style="--c:#4ade80">Ay</span>
+    <span style="--c:#fb923c">Az</span>
+    <span style="--c:#94a3b8">|A| (módulo)</span>
+   </div>
+  </section>
+
+  <section class="panel">
+   <h2><span>🌀 Giroscópio (rad/s)</span><span class="muted" id="gyrReadout">X: 0.00 · Y: 0.00 · Z: 0.00</span></h2>
+   <canvas id="sensorGyr"></canvas>
+   <div class="legend">
+    <span style="--c:#f472b6">Gx (Roll)</span>
+    <span style="--c:#a78bfa">Gy (Pitch)</span>
+    <span style="--c:#facc15">Gz (Yaw)</span>
+   </div>
+  </section>
+ </div>
+
  <!-- FITA DE CHEGADA DE PACOTES EM TEMPO REAL + INSPETOR BINÁRIO -->
  <section class="panel">
   <div class="tape-wrap">
@@ -179,40 +296,6 @@ tr.row-dup{background:rgba(234,179,8,0.12)}
    <div class="hex-line" id="fiHex">Frame Hex (41 bytes): aguardando...</div>
   </div>
  </section>
-
- <!-- GRÁFICOS DOS SENSORES + ORIENTAÇÃO 3D -->
- <div class="panels-3">
-  <section class="panel">
-   <h2><span>📈 Aceleração (m/s²)</span><span class="muted" id="accReadout">X: 0.00 · Y: 0.00 · Z: 0.00</span></h2>
-   <canvas id="sensorAcc"></canvas>
-   <div class="legend">
-    <span style="--c:#38bdf8">Ax</span>
-    <span style="--c:#4ade80">Ay</span>
-    <span style="--c:#fb923c">Az</span>
-    <span style="--c:#94a3b8">|A| (módulo)</span>
-   </div>
-  </section>
-
-  <section class="panel">
-   <h2><span>🌀 Giroscópio (rad/s)</span><span class="muted" id="gyrReadout">X: 0.00 · Y: 0.00 · Z: 0.00</span></h2>
-   <canvas id="sensorGyr"></canvas>
-   <div class="legend">
-    <span style="--c:#f472b6">Gx (Roll)</span>
-    <span style="--c:#a78bfa">Gy (Pitch)</span>
-    <span style="--c:#facc15">Gz (Yaw)</span>
-   </div>
-  </section>
-
-  <section class="panel">
-   <h2><span>🧭 Atitude 3D Estimada (MPU6050)</span><span class="muted" id="anglesReadout">Roll: 0° · Pitch: 0°</span></h2>
-   <canvas id="cubeCanvas"></canvas>
-   <div class="legend">
-    <span style="--c:#38bdf8">Eixo X</span>
-    <span style="--c:#4ade80">Eixo Y</span>
-    <span style="--c:#fb923c">Eixo Z (Gravidade)</span>
-   </div>
-  </section>
- </div>
 
  <!-- TRÁFEGO E LATÊNCIA -->
  <div class="panels-2">
@@ -267,7 +350,33 @@ let packets = [], devices = [], sequenceSlots = [];
 let countThisSecond = 0, rates = Array(60).fill(0);
 let simState = { enabled: false, paused: false, rate_hz: 50, profile: 'wave', loss_percent: 5, out_of_order_percent: 1.5, noise_level: 1.0, device_count: 1, persist_db: true };
 let freezeTable = false, wsConnected = false, localFallbackTimer = null, localSeq = 0, localBoot = 0xA1B2C3D4;
+
+// Estado cinemático 3D (Orientação + Velocidade + Trajetória de Baixa Latência)
 let rollEst = 0, pitchEst = 0, yawEst = 0, lastImuTs = null;
+let rollTare = 0, pitchTare = 0, yawTare = 0;
+let gxBias = 0, gyBias = 0, gzBias = 0;
+let lastGx = 0, lastGy = 0, lastGz = 0, lastPacketPerfMs = 0;
+let linAx = 0, linAy = 0, linAz = 0;
+let vx = 0, vy = 0, vz = 0, peakSpeed = 0;
+let posX = 0, posY = 0, posZ = 0;
+let trail3D = [];
+let velHistory = [];
+let stationaryCount = 0, isStationary = true;
+let chartsDirty = true, tableDirty = true;
+let lastChartsRenderMs = 0, lastTableRenderMs = 0;
+
+function ensureCanvasSize(canvas) {
+ const w = canvas.clientWidth || 300, h = canvas.clientHeight || 180, dpr = devicePixelRatio || 1;
+ const tw = Math.round(w * dpr), th = Math.round(h * dpr);
+ if (canvas.width !== tw || canvas.height !== th) {
+  canvas.width = tw;
+  canvas.height = th;
+ }
+ const ctx = canvas.getContext('2d');
+ ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+ ctx.clearRect(0, 0, w, h);
+ return { ctx, w, h };
+}
 
 function pulseRx() {
  const dot = el('rxDot');
@@ -276,14 +385,32 @@ function pulseRx() {
  dot._t = setTimeout(() => dot.classList.remove('active'), 90);
 }
 
+function tareSensor() {
+ rollTare = rollEst;
+ pitchTare = pitchEst;
+ yawTare = yawEst;
+ vx = 0; vy = 0; vz = 0;
+ posX = 0; posY = 0; posZ = 0;
+ peakSpeed = 0;
+ trail3D = [];
+ if (packets.length) {
+  const recentRest = packets.slice(-25);
+  gxBias = recentRest.reduce((s, p) => s + p.gx, 0) / recentRest.length;
+  gyBias = recentRest.reduce((s, p) => s + p.gy, 0) / recentRest.length;
+  gzBias = recentRest.reduce((s, p) => s + p.gz, 0) / recentRest.length;
+ }
+}
+
+function clearTrail() {
+ trail3D = [];
+ posX = 0; posY = 0; posZ = 0;
+ peakSpeed = 0;
+}
+
 function drawLineChart(canvasId, series, fixedMin = null, fixedMax = null) {
  const canvas = el(canvasId);
  if (!canvas) return;
- const w = canvas.clientWidth, h = canvas.clientHeight, dpr = devicePixelRatio || 1;
- canvas.width = Math.round(w * dpr);
- canvas.height = Math.round(h * dpr);
- const ctx = canvas.getContext('2d');
- ctx.scale(dpr, dpr);
+ const { ctx, w, h } = ensureCanvasSize(canvas);
 
  ctx.strokeStyle = '#1e2d44';
  ctx.lineWidth = 1;
@@ -295,15 +422,14 @@ function drawLineChart(canvasId, series, fixedMin = null, fixedMax = null) {
  }
 
  const all = series.flatMap(x => x.data).filter(Number.isFinite);
- const min = fixedMin !== null ? fixedMin : Math.min(-1, ...all);
- const max = fixedMax !== null ? fixedMax : Math.max(1, ...all);
+ const min = fixedMin !== null ? fixedMin : Math.min(-0.5, ...all);
+ const max = fixedMax !== null ? fixedMax : Math.max(0.5, ...all);
  const span = Math.max(1e-6, max - min);
 
- // Labels de escala
  ctx.fillStyle = '#64748b';
  ctx.font = '11px system-ui, sans-serif';
- ctx.fillText(max.toFixed(1), 6, 13);
- ctx.fillText(min.toFixed(1), 6, h - 5);
+ ctx.fillText(max.toFixed(2), 6, 13);
+ ctx.fillText(min.toFixed(2), 6, h - 5);
 
  series.forEach(s => {
   if (!s.data.length) return;
@@ -324,11 +450,7 @@ function drawLineChart(canvasId, series, fixedMin = null, fixedMax = null) {
 function drawSequenceTape() {
  const canvas = el('tapeCanvas');
  if (!canvas) return;
- const w = canvas.clientWidth, h = canvas.clientHeight, dpr = devicePixelRatio || 1;
- canvas.width = Math.round(w * dpr);
- canvas.height = Math.round(h * dpr);
- const ctx = canvas.getContext('2d');
- ctx.scale(dpr, dpr);
+ const { ctx, w, h } = ensureCanvasSize(canvas);
 
  const maxSlots = Math.max(25, Math.floor(w / 14));
  const visible = sequenceSlots.slice(-maxSlots);
@@ -361,42 +483,119 @@ function drawSequenceTape() {
  });
 }
 
-function drawCube3D() {
+function drawArrow2D(ctx, x1, y1, x2, y2, color, width = 2.6, label = '') {
+ const dx = x2 - x1, dy = y2 - y1;
+ const len = Math.hypot(dx, dy);
+ if (len < 2) return;
+ const angle = Math.atan2(dy, dx);
+ const head = Math.min(10, Math.max(5, len * 0.28));
+ ctx.save();
+ ctx.strokeStyle = color;
+ ctx.fillStyle = color;
+ ctx.lineWidth = width;
+ ctx.beginPath();
+ ctx.moveTo(x1, y1);
+ ctx.lineTo(x2, y2);
+ ctx.stroke();
+ ctx.beginPath();
+ ctx.moveTo(x2, y2);
+ ctx.lineTo(x2 - head * Math.cos(angle - 0.42), y2 - head * Math.sin(angle - 0.42));
+ ctx.lineTo(x2 - head * Math.cos(angle + 0.42), y2 - head * Math.sin(angle + 0.42));
+ ctx.closePath();
+ ctx.fill();
+ if (label) {
+  ctx.font = 'bold 11px system-ui';
+  ctx.fillText(label, x2 + 6 * Math.cos(angle), y2 + 6 * Math.sin(angle));
+ }
+ ctx.restore();
+}
+
+function drawCube3D(nowMs = performance.now()) {
  const canvas = el('cubeCanvas');
  if (!canvas) return;
- const w = canvas.clientWidth, h = canvas.clientHeight, dpr = devicePixelRatio || 1;
- canvas.width = Math.round(w * dpr);
- canvas.height = Math.round(h * dpr);
- const ctx = canvas.getContext('2d');
- ctx.scale(dpr, dpr);
+ const { ctx, w, h } = ensureCanvasSize(canvas);
 
- const cx = w / 2, cy = h / 2, scale = Math.min(w, h) * 0.34;
- const cr = Math.cos(rollEst), sr = Math.sin(rollEst);
- const cp = Math.cos(pitchEst), sp = Math.sin(pitchEst);
- const cyw = Math.cos(yawEst), syw = Math.sin(yawEst);
+ // Extrapolação sub-frame (60/120 FPS) entre pacotes para fluidez máxima e atraso zero
+ const dtPred = lastPacketPerfMs > 0 ? Math.min(0.022, Math.max(0, (nowMs - lastPacketPerfMs) / 1000)) : 0;
+ const rDisp = (rollEst - rollTare) + (isStationary ? 0 : lastGx * dtPred);
+ const pDisp = (pitchEst - pitchTare) + (isStationary ? 0 : lastGy * dtPred);
+ const yDisp = (yawEst - yawTare) + (isStationary ? 0 : lastGz * dtPred);
 
- function rot(x, y, z) {
-  // Roll (X), Pitch (Y), Yaw (Z)
-  let y1 = y * cr - z * sr, z1 = y * sr + z * cr, x1 = x;
-  let x2 = x1 * cp + z1 * sp, z2 = -x1 * sp + z1 * cp, y2 = y1;
-  let x3 = x2 * cyw - y2 * syw, y3 = x2 * syw + y2 * cyw, z3 = z2;
-  const persp = 2.8 / (2.8 - z3 * 0.45);
-  return [cx + x3 * scale * persp, cy - z3 * scale * 0.75 * persp, z3];
+ const cx = w / 2, cy = h * 0.54, scale = Math.min(w, h) * 0.31;
+ const cr = Math.cos(rDisp), sr = Math.sin(rDisp);
+ const cp = Math.cos(pDisp), sp = Math.sin(pDisp);
+ const cyw = Math.cos(yDisp), syw = Math.sin(yDisp);
+
+ // Projeção do espaço 3D para a tela (com leve inclinação de câmera isométrica/perspectiva)
+ const camTilt = 0.36;
+ const cCam = Math.cos(camTilt), sCam = Math.sin(camTilt);
+
+ function projectWorld(wx, wy, wz) {
+  const ry = wy * cCam - wz * sCam;
+  const rz = wy * sCam + wz * cCam;
+  const persp = 3.2 / Math.max(1.1, 3.2 - ry * 0.45);
+  return [cx + wx * scale * persp, cy - rz * scale * persp, ry];
  }
 
- // Placa MPU6050 (paralelepípedo achatado)
+ function bodyToWorld(bx, by, bz) {
+  // Roll (X), Pitch (Y), Yaw (Z) + deslocamento espacial posX, posY, posZ
+  const y1 = by * cr - bz * sr, z1 = by * sr + bz * cr, x1 = bx;
+  const x2 = x1 * cp + z1 * sp, z2 = -x1 * sp + z1 * cp, y2 = y1;
+  const x3 = x2 * cyw - y2 * syw, y3 = x2 * syw + y2 * cyw, z3 = z2;
+  return [x3 + posX, y3 + posY, z3 + posZ];
+ }
+
+ function rot(bx, by, bz) {
+  const [wx, wy, wz] = bodyToWorld(bx, by, bz);
+  return projectWorld(wx, wy, wz);
+ }
+
+ // 1. Grade de piso 3D de referência
+ ctx.strokeStyle = 'rgba(56, 189, 248, 0.13)';
+ ctx.lineWidth = 1;
+ const gridZ = -1.15;
+ for (let g = -2.0; g <= 2.01; g += 0.5) {
+  const p1 = projectWorld(g, -2.0, gridZ), p2 = projectWorld(g, 2.0, gridZ);
+  ctx.beginPath(); ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]); ctx.stroke();
+  const q1 = projectWorld(-2.0, g, gridZ), q2 = projectWorld(2.0, g, gridZ);
+  ctx.beginPath(); ctx.moveTo(q1[0], q1[1]); ctx.lineTo(q2[0], q2[1]); ctx.stroke();
+ }
+
+ // Sombra projetada do sensor no piso 3D
+ const shadowCenter = projectWorld(posX, posY, gridZ);
+ ctx.fillStyle = 'rgba(2, 6, 23, 0.55)';
+ ctx.beginPath();
+ ctx.ellipse(shadowCenter[0], shadowCenter[1], scale * 0.65, scale * 0.28, 0, 0, Math.PI * 2);
+ ctx.fill();
+
+ // 2. Rastro espacial 3D do movimento recente
+ if (trail3D.length > 1) {
+  for (let i = 1; i < trail3D.length; i++) {
+   const a = projectWorld(trail3D[i - 1][0], trail3D[i - 1][1], trail3D[i - 1][2]);
+   const b = projectWorld(trail3D[i][0], trail3D[i][1], trail3D[i][2]);
+   const alpha = i / trail3D.length;
+   ctx.strokeStyle = `rgba(168, 85, 247, ${(alpha * 0.85).toFixed(2)})`;
+   ctx.lineWidth = 1.2 + alpha * 2.5;
+   ctx.beginPath();
+   ctx.moveTo(a[0], a[1]);
+   ctx.lineTo(b[0], b[1]);
+   ctx.stroke();
+  }
+ }
+
+ // 3. Placa MPU6050 3D
  const verts = [
-  [-1.1, -0.75, -0.18], [1.1, -0.75, -0.18], [1.1, 0.75, -0.18], [-1.1, 0.75, -0.18],
-  [-1.1, -0.75,  0.18], [1.1, -0.75,  0.18], [1.1, 0.75,  0.18], [-1.1, 0.75,  0.18]
+  [-1.05, -0.72, -0.14], [1.05, -0.72, -0.14], [1.05, 0.72, -0.14], [-1.05, 0.72, -0.14],
+  [-1.05, -0.72,  0.14], [1.05, -0.72,  0.14], [1.05, 0.72,  0.14], [-1.05, 0.72,  0.14]
  ].map(v => rot(v[0], v[1], v[2]));
 
  const faces = [
-  { idx: [4, 5, 6, 7], color: 'rgba(30, 64, 175, 0.65)' }, // Topo
-  { idx: [0, 1, 2, 3], color: 'rgba(15, 23, 42, 0.75)' },  // Base
-  { idx: [0, 1, 5, 4], color: 'rgba(37, 99, 235, 0.45)' },
-  { idx: [1, 2, 6, 5], color: 'rgba(29, 78, 216, 0.45)' },
-  { idx: [2, 3, 7, 6], color: 'rgba(30, 58, 138, 0.45)' },
-  { idx: [3, 0, 4, 7], color: 'rgba(23, 37, 84, 0.45)' }
+  { idx: [4, 5, 6, 7], color: 'rgba(30, 64, 175, 0.78)' }, // Topo PCB
+  { idx: [0, 1, 2, 3], color: 'rgba(15, 23, 42, 0.85)' },  // Base PCB
+  { idx: [0, 1, 5, 4], color: 'rgba(37, 99, 235, 0.58)' },
+  { idx: [1, 2, 6, 5], color: 'rgba(29, 78, 216, 0.62)' },
+  { idx: [2, 3, 7, 6], color: 'rgba(30, 58, 138, 0.58)' },
+  { idx: [3, 0, 4, 7], color: 'rgba(23, 37, 84, 0.58)' }
  ];
  faces.sort((a, b) => {
   const za = a.idx.reduce((s, i) => s + verts[i][2], 0) / 4;
@@ -418,29 +617,56 @@ function drawCube3D() {
   ctx.stroke();
  });
 
- // Eixos de referência X, Y, Z a partir do centro
+ // Chip central MPU6050 sobre a PCB
+ const chipVerts = [
+  [-0.28, -0.28, 0.15], [0.28, -0.28, 0.15], [0.28, 0.28, 0.15], [-0.28, 0.28, 0.15]
+ ].map(v => rot(v[0], v[1], v[2]));
+ ctx.beginPath();
+ chipVerts.forEach((v, i) => i ? ctx.lineTo(v[0], v[1]) : ctx.moveTo(v[0], v[1]));
+ ctx.closePath();
+ ctx.fillStyle = '#0f172a';
+ ctx.fill();
+ ctx.strokeStyle = '#94a3b8';
+ ctx.lineWidth = 1;
+ ctx.stroke();
+
+ // 4. Eixos X, Y, Z do sensor
  const origin = rot(0, 0, 0);
  const axes3d = [
-  { p: rot(1.45, 0, 0), c: '#38bdf8', lbl: 'X' },
-  { p: rot(0, 1.45, 0), c: '#4ade80', lbl: 'Y' },
+  { p: rot(1.42, 0, 0), c: '#38bdf8', lbl: 'X' },
+  { p: rot(0, 1.42, 0), c: '#4ade80', lbl: 'Y' },
   { p: rot(0, 0, 1.15), c: '#fb923c', lbl: 'Z' }
  ];
- axes3d.forEach(a => {
-  ctx.beginPath();
-  ctx.strokeStyle = a.c;
-  ctx.lineWidth = 2.2;
-  ctx.moveTo(origin[0], origin[1]);
-  ctx.lineTo(a.p[0], a.p[1]);
-  ctx.stroke();
-  ctx.fillStyle = a.c;
-  ctx.font = 'bold 11px system-ui';
-  ctx.fillText(a.lbl, a.p[0] + 4, a.p[1] + 4);
- });
+ axes3d.forEach(a => drawArrow2D(ctx, origin[0], origin[1], a.p[0], a.p[1], a.c, 2.2, a.lbl));
+
+ // 5. Vetor de Aceleração Linear (sem gravidade)
+ const linMag = Math.hypot(linAx, linAy, linAz);
+ if (linMag > 0.18) {
+  const scaleAcc = Math.min(1.8, linMag * 0.28);
+  const accEnd = projectWorld(
+   posX + (linAx / linMag) * scaleAcc,
+   posY + (linAy / linMag) * scaleAcc,
+   posZ + (linAz / linMag) * scaleAcc
+  );
+  drawArrow2D(ctx, origin[0], origin[1], accEnd[0], accEnd[1], '#facc15', 2.4, 'a');
+ }
+
+ // 6. Vetor de Velocidade 3D no Espaço (V)
+ const vMag = Math.hypot(vx, vy, vz);
+ if (vMag > 0.015) {
+  const scaleVel = Math.min(2.1, Math.max(0.35, vMag * 2.2));
+  const velEnd = projectWorld(
+   posX + (vx / vMag) * scaleVel,
+   posY + (vy / vMag) * scaleVel,
+   posZ + (vz / vMag) * scaleVel
+  );
+  drawArrow2D(ctx, origin[0], origin[1], velEnd[0], velEnd[1], '#22d3ee', 3.4, `V (${(vMag * 100).toFixed(0)} cm/s)`);
+ }
 }
 
 function updateCharts() {
  const mac = el('device').value;
- const list = packets.filter(p => !mac || p.mac === mac).slice(-180);
+ const list = packets.filter(p => !mac || p.mac === mac).slice(-160);
 
  drawLineChart('sensorAcc', [
   { data: list.map(p => p.ax), color: '#38bdf8' },
@@ -455,6 +681,14 @@ function updateCharts() {
   { data: list.map(p => p.gz), color: '#facc15' }
  ]);
 
+ const vList = velHistory.slice(-160);
+ drawLineChart('velChart', [
+  { data: vList.map(v => v.vx), color: '#38bdf8' },
+  { data: vList.map(v => v.vy), color: '#4ade80' },
+  { data: vList.map(v => v.vz), color: '#fb923c' },
+  { data: vList.map(v => v.mag), color: '#22d3ee', width: 2.3 }
+ ], -0.5, 0.5);
+
  drawLineChart('traffic', [{ data: rates, color: '#38bdf8' }], 0, null);
 
  const gaps = list.map(p => p.gap_ms).filter(v => v != null && Number.isFinite(v));
@@ -466,7 +700,6 @@ function updateCharts() {
  }
 
  drawSequenceTape();
- drawCube3D();
 }
 
 function renderTable() {
@@ -483,7 +716,7 @@ function renderTable() {
   if (statusFilter === 'gap' && st !== 'gap') return false;
   if (statusFilter === 'out_of_order' && st !== 'out_of_order') return false;
   return true;
- }).slice(-120).reverse();
+ }).slice(-60).reverse();
 
  const body = el('rows');
  body.replaceChildren();
@@ -528,18 +761,123 @@ function renderTable() {
 }
 
 function updateOrientation(p) {
+ const g = 9.80665;
+ const dt = lastImuTs ? Math.min(0.1, Math.max(0.002, p.timestamp - lastImuTs)) : 0.0133;
+ lastImuTs = p.timestamp;
+ lastPacketPerfMs = performance.now();
+
+ // Calibração adaptativa de bias do giroscópio quando em repouso
+ const rawGyrMag = Math.hypot(p.gx - gxBias, p.gy - gyBias, p.gz - gzBias);
+ const accTotalMag = Math.hypot(p.ax, p.ay, p.az);
+ const near1G = Math.abs(accTotalMag - g) < 0.38;
+
+ if (near1G && rawGyrMag < 0.065) {
+  gxBias = 0.995 * gxBias + 0.005 * p.gx;
+  gyBias = 0.995 * gyBias + 0.005 * p.gy;
+  gzBias = 0.995 * gzBias + 0.005 * p.gz;
+ }
+
+ const gx = p.gx - gxBias;
+ const gy = p.gy - gyBias;
+ const gz = p.gz - gzBias;
+ lastGx = gx; lastGy = gy; lastGz = gz;
+
+ // Filtro complementar adaptativo (confia mais no giroscópio durante acelerações rápidas)
  const rollAcc = Math.atan2(p.ay, p.az);
  const pitchAcc = Math.atan2(-p.ax, Math.hypot(p.ay, p.az));
- const dt = lastImuTs ? Math.min(0.2, Math.max(0.001, p.timestamp - lastImuTs)) : 0.02;
- lastImuTs = p.timestamp;
- // Filtro complementar (94% giroscópio + 6% acelerômetro)
- rollEst = 0.92 * (rollEst + p.gx * dt) + 0.08 * rollAcc;
- pitchEst = 0.92 * (pitchEst + p.gy * dt) + 0.08 * pitchAcc;
- yawEst = (yawEst + p.gz * dt) % (Math.PI * 2);
+ const alpha = Math.abs(accTotalMag - g) < 1.3 ? 0.94 : 0.992;
 
- const rDeg = (rollEst * 180 / Math.PI).toFixed(1);
- const pDeg = (pitchEst * 180 / Math.PI).toFixed(1);
- el('anglesReadout').textContent = `Roll: ${rDeg}° · Pitch: ${pDeg}°`;
+ if (rollEst === 0 && pitchEst === 0 && packets.length <= 2) {
+  rollEst = rollAcc;
+  pitchEst = pitchAcc;
+ } else {
+  rollEst = alpha * (rollEst + gx * dt) + (1 - alpha) * rollAcc;
+  pitchEst = alpha * (pitchEst + gy * dt) + (1 - alpha) * pitchAcc;
+ }
+ if (Math.abs(gz) > 0.012) {
+  yawEst = yawEst + gz * dt;
+ }
+
+ // Remoção do vetor gravidade (9.80665 m/s²) usando a orientação atual (Roll/Pitch)
+ const gravX = -g * Math.sin(pitchEst);
+ const gravY = g * Math.sin(rollEst) * Math.cos(pitchEst);
+ const gravZ = g * Math.cos(rollEst) * Math.cos(pitchEst);
+
+ const bx = p.ax - gravX;
+ const by = p.ay - gravY;
+ const bz = p.az - gravZ;
+
+ // Rotaciona aceleração linear do corpo para o referencial do espaço 3D
+ const r = rollEst - rollTare, pt = pitchEst - pitchTare, yw = yawEst - yawTare;
+ const cr = Math.cos(r), sr = Math.sin(r), cp = Math.cos(pt), sp = Math.sin(pt), cy = Math.cos(yw), sy = Math.sin(yw);
+ const y1 = by * cr - bz * sr, z1 = by * sr + bz * cr, x1 = bx;
+ const x2 = x1 * cp + z1 * sp, z2 = -x1 * sp + z1 * cp, y2 = y1;
+ linAx = x2 * cy - y2 * sy;
+ linAy = x2 * sy + y2 * cy;
+ linAz = z2;
+
+ const linMag = Math.hypot(linAx, linAy, linAz);
+ const omgMag = Math.hypot(gx, gy, gz);
+
+ // Detector ZUPT (Zero Velocity Update) para eliminar deriva quando o sensor para
+ if (linMag < 0.28 && omgMag < 0.08) {
+  stationaryCount++;
+ } else {
+  stationaryCount = 0;
+ }
+ isStationary = stationaryCount >= 5;
+
+ if (isStationary) {
+  vx *= 0.65; vy *= 0.65; vz *= 0.65;
+  if (Math.hypot(vx, vy, vz) < 0.008) { vx = 0; vy = 0; vz = 0; }
+  posX *= 0.92; posY *= 0.92; posZ *= 0.92;
+ } else {
+  const deadzone = 0.14;
+  const axUse = Math.abs(linAx) > deadzone ? linAx : 0;
+  const ayUse = Math.abs(linAy) > deadzone ? linAy : 0;
+  const azUse = Math.abs(linAz) > deadzone ? linAz : 0;
+  vx = (vx + axUse * dt) * 0.955;
+  vy = (vy + ayUse * dt) * 0.955;
+  vz = (vz + azUse * dt) * 0.955;
+  posX = Math.max(-1.3, Math.min(1.3, (posX + vx * dt * 2.4) * 0.965));
+  posY = Math.max(-1.3, Math.min(1.3, (posY + vy * dt * 2.4) * 0.965));
+  posZ = Math.max(-0.9, Math.min(0.9, (posZ + vz * dt * 2.4) * 0.965));
+ }
+
+ const vMag = Math.hypot(vx, vy, vz);
+ if (vMag > peakSpeed) peakSpeed = vMag;
+ trail3D.push([posX, posY, posZ]);
+ if (trail3D.length > 55) trail3D.shift();
+
+ velHistory.push({ vx, vy, vz, mag: vMag });
+ if (velHistory.length > 200) velHistory.shift();
+
+ // Atualiza HUD de orientação e velocidade
+ const rDeg = ((rollEst - rollTare) * 180 / Math.PI).toFixed(1);
+ const pDeg = ((pitchEst - pitchTare) * 180 / Math.PI).toFixed(1);
+ const yDeg = (((yawEst - yawTare) * 180 / Math.PI) % 360).toFixed(1);
+ el('anglesReadout').textContent = `Roll: ${rDeg}° · Pitch: ${pDeg}° · Yaw: ${yDeg}°`;
+
+ const mBadge = el('motionBadge');
+ if (isStationary) {
+  mBadge.textContent = '🛑 Em Repouso (ZUPT)';
+  mBadge.style.color = '#6ee7b7';
+ } else {
+  mBadge.textContent = '🟢 Em Movimento no Espaço';
+  mBadge.style.color = '#38bdf8';
+ }
+
+ el('velMag').textContent = `${vMag.toFixed(2)} m/s`;
+ el('velCm').textContent = `${(vMag * 100).toFixed(1)} cm/s · Pico: ${peakSpeed.toFixed(2)} m/s`;
+ el('velReadout').textContent = `Vx: ${vx.toFixed(2)} · Vy: ${vy.toFixed(2)} · Vz: ${vz.toFixed(2)} m/s`;
+ el('speedBar').style.width = `${Math.min(100, vMag * 85).toFixed(1)}%`;
+
+ const omgDeg = (omgMag * 180 / Math.PI).toFixed(1);
+ el('angVelMag').textContent = `${omgDeg} °/s`;
+ el('angVelRad').textContent = `${omgMag.toFixed(2)} rad/s`;
+
+ el('linAccMag').textContent = `${linMag.toFixed(2)} m/s²`;
+ el('linAccVec').textContent = `X:${linAx.toFixed(1)} Y:${linAy.toFixed(1)} Z:${linAz.toFixed(1)}`;
 }
 
 function onPacket(p) {
@@ -550,7 +888,6 @@ function onPacket(p) {
 
  const selectedMac = el('device').value;
  if (!selectedMac || selectedMac === p.mac) {
-  // Atualiza fita visual de sequência
   if (p.status === 'gap' && p.lost_delta > 0) {
    const missingShow = Math.min(12, p.lost_delta);
    for (let i = missingShow; i >= 1; i--) {
@@ -586,27 +923,115 @@ function onPacket(p) {
   updateOrientation(p);
  }
 
- renderTable();
- updateCharts();
+ chartsDirty = true;
+ tableDirty = true;
+}
+
+// Loop de renderização fluido em 60/120 FPS desacoplado do WebSocket
+function animationLoop(nowMs) {
+ drawCube3D(nowMs);
+ if (chartsDirty && nowMs - lastChartsRenderMs >= 38) {
+  lastChartsRenderMs = nowMs;
+  chartsDirty = false;
+  updateCharts();
+ }
+ if (tableDirty && nowMs - lastTableRenderMs >= 240) {
+  lastTableRenderMs = nowMs;
+  tableDirty = false;
+  renderTable();
+ }
+ requestAnimationFrame(animationLoop);
+}
+
+let lastPortsSignature = '';
+
+function syncSerialPortsUI(serialInfo) {
+ if (!serialInfo) return;
+ const select = el('serialPortSelect');
+ if (!select || document.activeElement === select) return;
+ const currentPort = serialInfo.port || 'COM5';
+ const ports = Array.isArray(serialInfo.available_ports) ? serialInfo.available_ports : [];
+ const hasCurrent = ports.some(p => p.port === currentPort);
+ const fullList = hasCurrent
+  ? ports
+  : [{ port: currentPort, description: `${currentPort} (desconectada)`, is_usb: false }, ...ports];
+ const sig = currentPort + '|' + fullList.map(p => `${p.port}:${p.description}`).join(';');
+ if (sig !== lastPortsSignature) {
+  lastPortsSignature = sig;
+  select.replaceChildren();
+  fullList.forEach(p => {
+   const label = p.description && !p.description.startsWith(p.port)
+    ? `${p.port} — ${p.description.replace(/\s*\(COM\d+\)\s*$/i, '')}`
+    : (p.description || p.port);
+   select.add(new Option(label, p.port));
+  });
+ }
+ select.value = currentPort;
+}
+
+async function changeSerialPort(port) {
+ if (!port) return;
+ try {
+  const res = await fetch('/api/serial/port', {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify({ port })
+  });
+  if (res.ok) onSummary(await res.json());
+ } catch (e) {}
+}
+
+async function refreshSerialPorts() {
+ try {
+  const res = await fetch('/api/serial/ports');
+  if (res.ok) {
+   const info = await res.json();
+   lastPortsSignature = '';
+   syncSerialPortsUI(info);
+  }
+ } catch (e) {}
 }
 
 function syncSimUI(sim, serialInfo) {
+ if (serialInfo) syncSerialPortsUI(serialInfo);
  if (!sim) return;
  simState = { ...simState, ...sim };
  const btnToggle = el('btnToggleSim');
  const badge = el('modeBadge');
  const btnPause = el('btnPauseSim');
 
+ const simPanel = el('simPanel');
  if (simState.enabled) {
+  if (simPanel) simPanel.style.display = '';
   badge.textContent = simState.paused ? '🧪 Simulação (Pausada)' : `🧪 Simulação Ativa (${simState.rate_hz} Hz)`;
   badge.className = 'badge sim';
+  badge.title = '';
   btnToggle.textContent = '🔌 Voltar para Porta Serial';
   btnToggle.className = 'sim-active';
  } else {
+  if (simPanel) simPanel.style.display = 'none';
   const portTxt = serialInfo && serialInfo.port ? serialInfo.port : 'USB';
-  const connTxt = serialInfo && serialInfo.connected ? `Conectado (${portTxt})` : `Aguardando (${portTxt})`;
-  badge.textContent = `🔌 Serial: ${connTxt}`;
-  badge.className = serialInfo && serialInfo.connected ? 'badge ok' : 'badge';
+  if (serialInfo && serialInfo.connected) {
+   if (serialInfo.role === 'sender') {
+    if (serialInfo.diag_status === 'mpu_error') {
+     badge.textContent = `⚠️ ${portTxt}: Emissor (MPU6050 não encontrado!)`;
+     badge.className = 'badge';
+    } else {
+     badge.textContent = `📡 ${portTxt}: Emissor TX (mude para a porta do Receptor)`;
+     badge.className = 'badge';
+    }
+   } else if (serialInfo.role === 'receiver') {
+    badge.textContent = `🔌 Serial: Receptor (${portTxt})`;
+    badge.className = 'badge ok';
+   } else {
+    badge.textContent = `🔌 Serial: Conectado (${portTxt})`;
+    badge.className = 'badge ok';
+   }
+  } else {
+   badge.textContent = `🔌 Serial: Aguardando (${portTxt})`;
+   badge.className = 'badge';
+  }
+  badge.title = serialInfo && (serialInfo.diag_msg || serialInfo.error) ? (serialInfo.diag_msg || serialInfo.error) : '';
   btnToggle.textContent = '🧪 Ativar Modo Simulação';
   btnToggle.className = 'primary';
  }
@@ -828,8 +1253,9 @@ setInterval(() => {
  updateCharts();
 }, 1000);
 
-window.onresize = updateCharts;
+window.onresize = () => { chartsDirty = true; };
 updateCharts();
+requestAnimationFrame(animationLoop);
 loadInitialHistory();
 connect();
 </script>
